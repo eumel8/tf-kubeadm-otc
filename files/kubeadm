@@ -1,0 +1,130 @@
+#!/bin/sh
+# Kubeadm Installer Ubuntu 20.04
+#
+#
+echo "01 Set Swapp off"
+swapoff -a
+#
+echo "02 Set Kernel params"
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+modprobe overlay
+modprobe br_netfilter
+
+# sysctl params required by setup, params persist across reboots
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+# Apply sysctl params without reboot
+sudo sysctl --system
+#
+echo "03 Ensure iptables"
+update-alternatives --config iptables
+#
+#echo "04 Install containerd"
+#apt-get install -y containerd.io
+#
+#echo "05 Set cgroup v2 driver to systemd"
+#cat > /etc/containerd/config.toml <<EOF
+#version = 2
+#[plugins]
+#  [plugins."io.containerd.grpc.v1.cri"]
+#   [plugins."io.containerd.grpc.v1.cri".containerd]
+#      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+#        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+#          runtime_type = "io.containerd.runc.v2"
+#          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+#            SystemdCgroup = true
+#EOF
+#
+echo "06 Activate containerd plugins"
+#sed -i 's/disabled_plugins/# disabled_plugins/' /etc/containerd/config.toml
+#systemctl restart containerd.service
+#
+echo "06 Install and start crio"
+mkdir -p /usr/share/keyrings
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/Debian_11/Release.key | gpg --dearmor -o /usr/share/keyrings/libcontainers-archive-keyring.gpg
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/1.28/Debian_11/Release.key | gpg --dearmor -o /usr/share/keyrings/libcontainers-crio-archive-keyring.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/libcontainers-archive-keyring.gpg] https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/Debian_11/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+echo "deb [signed-by=/usr/share/keyrings/libcontainers-crio-archive-keyring.gpg] https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/1.28/Debian_11/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:1.28.list
+
+apt-get update
+apt-get install -y cri-o cri-o-runc
+systemctl start crio.service
+#
+echo "07 Kubeadm source"
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+apt update
+#
+echo 08 "Install kubeadm"
+apt-get install -y kubeadm kubelet kubectl
+#
+echo 09 "Init Kubeadm"
+#kubeadm init --control-plane-endpoint=10.0.1.2 --pod-network-cidr=192.168.0.0/16 --cri-socket=unix:///run/containerd/containerd.sock
+kubeadm init --apiserver-cert-extra-sans=${kubeadm_host}.${kubeadm_domain}
+# 
+echo 10 "Verify & client access"
+echo export KUBECONFIG=/etc/kubernetes/admin.conf >> /root/.bashrc
+export KUBECONFIG=/etc/kubernetes/admin.conf
+echo "source  <(kubectl completion bash)" >> /root/.bashrc
+CA=$(cat /etc/kubernetes/pki/ca.crt|base64 -w0)
+TOKEN=$(kubeadm token create)
+kubectl get nodes
+#
+echo 11 "Make control node working"
+for i in `kubectl get nodes -o name`; do
+kubectl taint nodes $i node-role.kubernetes.io/control-plane:NoSchedule-;
+kubectl label node $i node-role.kubernetes.io/worker=;
+done
+#
+echo 12 "Install Helm"
+snap install helm --channel=latest/stable --classic
+#
+echo 13 "Install local-path provisioner"
+git clone https://github.com/rancher/local-path-provisioner.git
+cd local-path-provisioner
+helm -n local-path-provisioner install local-path-provisioner ./deploy/chart/local-path-provisioner --set storageClass.defaultClass=true --create-namespace
+#
+echo 14 "Install cert-manager"
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm -n cert-manager upgrade -i cert-manager jetstack/cert-manager \
+    --version v1.16.1 --create-namespace
+#
+echo 15 "Print out user KUBECONFIG"
+cat << EOF > /tmp/kubeadm.config
+apiVersion: v1
+kind: Config
+clusters:
+- name: "kubeadm"
+  cluster:
+    server: "https://${kubeadm_host}.${kubeadm_domain}:6443"
+    certificate-authority-data: $CA
+users:
+- name: "kubeadm"
+  user:
+    token: $TOKEN
+contexts:
+- name: "kubeadm"
+  context:
+    user: "kubeadm"
+    cluster: "kubeadm"
+current-context: "kubeadm"
+EOF
+#
+cat /tmp/kubeadm.config  > /dev/console
+# Give them token cluster-admin permissions
+TOKENID=$(echo $TOKEN | awk -F'.' '{print $1}')
+kubectl create clusterrolebinding token-binding-$TOKENID \
+  --clusterrole=cluster-admin \
+  --user=system:bootstrap:$TOKENID
+
