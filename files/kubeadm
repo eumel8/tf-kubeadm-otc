@@ -130,6 +130,7 @@ kubectl create clusterrolebinding token-binding-$TOKENID \
 #
 echo 16 "Generate software package install script"
 cat << EOF > /opt/install-software.sh
+#!/bin/sh
 export KUBECONFIG=/tmp/kubeadm.config
 mkdir -p /opt/software
 # kube-prometheus-spec
@@ -153,4 +154,5 @@ helm -n ingress-nginx upgrade -i ingress-nginx . --create-namespace
 # kubectl -n ingress-nginx edit service ingress-nginx-controller
 # set annotation with external ip: kube-vip.io/loadbalancerIPs: 80.158.34.241
 EOF
+chmod +x /opt/install-software.sh
 
