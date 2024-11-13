@@ -64,8 +64,16 @@ tofu plan
 
 This will replace server with a new instance.
 
-Note: this will also upgrade/downgrade the defined version of Rancher and Cert-Manager
+## Software
 
+Within cloud-init a file named /opt/install-software.sh will installed. It can be executed to install
+
+- kube-prometheus-stack
+- kube-logging
+- ingress-nginx
+- kube-vip
+
+see hints in the file for further information
 
 ## Shutdown-Mode
 

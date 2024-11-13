@@ -129,7 +129,7 @@ kubectl create clusterrolebinding token-binding-$TOKENID \
   --user=system:bootstrap:$TOKENID
 #
 echo 16 "Generate software package install script"
-cat << EOF > /tmp/software.sh
+cat << EOF > /opt/install-software.sh
 export KUBECONFIG=/tmp/kubeadm.config
 mkdir -p /opt/software
 # kube-prometheus-spec
