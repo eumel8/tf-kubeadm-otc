@@ -88,6 +88,39 @@ resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_22_in" {
   security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
 
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_80_in" {
+  description       = "Kubeadm accept tcp/80 ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 80
+  port_range_max    = 80
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_443_in" {
+  description       = "Kubeadm accept tcp/443 ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 443
+  port_range_max    = 443
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_9000_in" {
+  description       = "Kubeadm accept tcp/9000, various app, ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 9000
+  port_range_max    = 9000
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
 resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_6443_in" {
   description       = "Kubeadm accept tcp/6443 ingress"
   direction         = "ingress"
