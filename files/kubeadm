@@ -127,4 +127,30 @@ TOKENID=$(echo $TOKEN | awk -F'.' '{print $1}')
 kubectl create clusterrolebinding token-binding-$TOKENID \
   --clusterrole=cluster-admin \
   --user=system:bootstrap:$TOKENID
+#
+echo 16 "Generate software package install script"
+cat << EOF > /tmp/software.sh
+export KUBECONFIG=/tmp/kubeadm.config
+mkdir -p /opt/software
+# kube-prometheus-spec
+cd /opt/software
+git clone https://github.com/prometheus-community/helm-charts.git prometheus-community
+cd prometheus-community/charts/kube-prometheus-stack
+helm dependency build
+helm -n monitoring upgrade -i monitoring . --create-namespace
+# kube-logging
+cd /opt/software
+git clone https://github.com/kube-logging/logging-operator.git
+cd kube-logging/charts/logging-operator
+helm -n logging upgrade -i logging . --create-namespace
+# ingress-nginx
+cd /opt/software
+git clone https://github.com/kubernetes/ingress-nginx.git
+cd ingress-nginx/charts/ingress-nginx
+helm -n ingress-nginx upgrade -i ingress-nginx . --create-namespace
+# adjust internal/external and interface name in manifests/kube-vip.yaml
+# copy file to /etc/kubernetes/manifests
+# kubectl -n ingress-nginx edit service ingress-nginx-controller
+# set annotation with external ip: kube-vip.io/loadbalancerIPs: 80.158.34.241
+EOF
 
