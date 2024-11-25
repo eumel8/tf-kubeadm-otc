@@ -11,7 +11,7 @@ output "kubeadm-info" {
            "scp ubuntu@${opentelekomcloud_networking_floatingip_v2.kubeadm.address}:/var/www/html/${random_string.random.id}/kubeadm.config .;export KUBECONFIG=./kubeadm.config",
            "To access the server via ssh:",
            "ssh ubuntu@${opentelekomcloud_networking_floatingip_v2.kubeadm.address}",
-           "We provided some additional resource via install script on /opt/install-software.sh",
+           "We provided some additional resource via install script on /install-software.sh",
            "To get: curl -o install-software.sh http://${opentelekomcloud_networking_floatingip_v2.kubeadm.address}:8181/${random_string.random.id}/install-software.sh"
            ]
 }
