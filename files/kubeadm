@@ -90,18 +90,16 @@ echo 12 "Install Helm"
 snap install helm --channel=latest/stable --classic
 #
 echo 13 "Install local-path provisioner"
-git clone https://github.com/rancher/local-path-provisioner.git
+git clone --depth 1 https://github.com/rancher/local-path-provisioner.git
 cd local-path-provisioner
 helm -n local-path-provisioner install local-path-provisioner ./deploy/chart/local-path-provisioner --set storageClass.defaultClass=true --create-namespace
 #
-echo 14 "Install cert-manager"
-helm repo add jetstack https://charts.jetstack.io
-helm repo update
-helm -n cert-manager upgrade -i cert-manager jetstack/cert-manager \
-    --version v1.16.1 --create-namespace
-#
-echo 15 "Print out user KUBECONFIG"
-cat << EOF > /tmp/kubeadm.config
+echo 14 "Install lighttpd to serve kubeconfig"
+apt install -y lighttpd
+sed -i 's/server.port                 = 80/server.port                 = 8181/' /etc/lighttpd/lighttpd.conf
+systemctl restart lighttpd.service
+mkdir -p /var/www/html/${random_string}
+cat << EOF > /var/www/html/${random_string}/kubeadm.config
 apiVersion: v1
 kind: Config
 clusters:
@@ -121,7 +119,8 @@ contexts:
 current-context: "kubeadm"
 EOF
 #
-cat /tmp/kubeadm.config  > /dev/console
+echo 15 "Print out user KUBECONFIG"
+cat /var/www/html/${random_string}/kubeadm.config  > /dev/console
 # Give them token cluster-admin permissions
 TOKENID=$(echo $TOKEN | awk -F'.' '{print $1}')
 kubectl create clusterrolebinding token-binding-$TOKENID \
@@ -129,24 +128,31 @@ kubectl create clusterrolebinding token-binding-$TOKENID \
   --user=system:bootstrap:$TOKENID
 #
 echo 16 "Generate software package install script"
-cat << EOF > /opt/install-software.sh
+cat << EOF > /install-software.sh
 #!/bin/sh
-export KUBECONFIG=/tmp/kubeadm.config
-mkdir -p /opt/software
+# export KUBECONFIG=/etc/kubernetes/admin.conf
+rm -rf /\$HOME/software
+mkdir -p /\$HOME/software
+# cert-manager
+cd /\$HOME/software
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm -n cert-manager upgrade -i cert-manager jetstack/cert-manager \
+    --version v1.16.1 --set crds.enabled=true --create-namespace
 # kube-prometheus-spec
-cd /opt/software
-git clone https://github.com/prometheus-community/helm-charts.git prometheus-community
+cd /\$HOME/software
+git clone --depth 1 https://github.com/prometheus-community/helm-charts.git prometheus-community
 cd prometheus-community/charts/kube-prometheus-stack
 helm dependency build
 helm -n monitoring upgrade -i monitoring . --create-namespace
 # kube-logging
-cd /opt/software
-git clone https://github.com/kube-logging/logging-operator.git
-cd kube-logging/charts/logging-operator
+cd /\$HOME/software
+git clone --depth 1 https://github.com/kube-logging/logging-operator.git
+cd logging-operator/charts/logging-operator
 helm -n logging upgrade -i logging . --create-namespace
 # ingress-nginx
-cd /opt/software
-git clone https://github.com/kubernetes/ingress-nginx.git
+cd /\$HOME/software
+git clone --depth 1 https://github.com/kubernetes/ingress-nginx.git
 cd ingress-nginx/charts/ingress-nginx
 helm -n ingress-nginx upgrade -i ingress-nginx . --create-namespace
 # adjust internal/external and interface name in manifests/kube-vip.yaml
@@ -154,5 +160,6 @@ helm -n ingress-nginx upgrade -i ingress-nginx . --create-namespace
 # kubectl -n ingress-nginx edit service ingress-nginx-controller
 # set annotation with external ip: kube-vip.io/loadbalancerIPs: 80.158.34.241
 EOF
-chmod +x /opt/install-software.sh
+chmod +x /install-software.sh
+cp /install-software.sh /var/www/html/${random_string}/install-software.sh
 

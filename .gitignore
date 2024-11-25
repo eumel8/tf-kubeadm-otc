@@ -4,3 +4,4 @@ terraform.state*
 terraform.tfstate*
 terraform.tfvars
 kubeadm.config
+install-software.sh

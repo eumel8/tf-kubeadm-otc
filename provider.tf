@@ -4,6 +4,9 @@ terraform {
          source = "opentelekomcloud/opentelekomcloud"
          version = ">= 1.23.2"
       }
+      random = {
+         source = "hashicorp/random"
+      }
    }
 }
 

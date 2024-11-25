@@ -41,10 +41,18 @@ resource "opentelekomcloud_dns_recordset_v2" "public_record" {
 ########### 
 # ECS part
 ########### 
+resource "random_string" "random" {
+  length  = 32
+  lower   = true
+  special = false
+  upper   = false
+}
+
 locals {
   kubeadm = templatefile("${path.module}/files/kubeadm",{
     kubeadm_host = var.kubeadm_host
     kubeadm_domain = var.kubeadm_domain
+    random_string  = random_string.random.id
   })
 }
 
@@ -117,6 +125,17 @@ resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_9000_in" {
   protocol          = "tcp"
   port_range_min    = 9000
   port_range_max    = 9000
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_8181_in" {
+  description       = "Kubeadm accept tcp/8181, various app, ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 8181
+  port_range_max    = 8181
   remote_ip_prefix  = "0.0.0.0/0"
   security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
