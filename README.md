@@ -67,14 +67,14 @@ kubeadm-api = "https://kubeadm.otc.mcsps.de"
 kubeadm-info = [
   "Welcome to Kubeadm at OTC! It will take up to 5 minutes before your cluster is ready and accessable",
   "To get kubeadm config from lighttpd server:",
-  "curl -o kubeadm.config http://164.30.35.56:8181/cvivcfat6mol7te0e4jxr5zez0m0ig53/kubeadm.config",
+  "curl -o kubeadm.config http://164.30.35.56:8085/cvivcfat6mol7te0e4jxr5zez0m0ig53/kubeadm.config",
   "export KUBECONFIG=$(pwd)/kubeadm.config",
   "To get kubeadm config via scp:",
   "scp ubuntu@164.30.35.56:/var/www/html/cvivcfat6mol7te0e4jxr5zez0m0ig53/kubeadm.config .;export KUBECONFIG=./kubeadm.config",
   "To access the server via ssh:",
   "ssh ubuntu@164.30.35.56",
   "We provided some additional resource via install script on /install-software.sh",
-  "To get: curl -o install-software.sh http://164.30.35.56:8181/cvivcfat6mol7te0e4jxr5zez0m0ig53/install-software.sh",
+  "To get: curl -o install-software.sh http://164.30.35.56:8085/cvivcfat6mol7te0e4jxr5zez0m0ig53/install-software.sh",
 ]
 
 $ scp ubuntu@164.30.35.56:/var/www/html/cvivcfat6mol7te0e4jxr5zez0m0ig53/kubeadm.config .;export KUBECONFIG=./kubeadm.config

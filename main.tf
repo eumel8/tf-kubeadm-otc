@@ -50,6 +50,7 @@ resource "random_string" "random" {
 
 locals {
   kubeadm = templatefile("${path.module}/files/kubeadm",{
+    public_ip = opentelekomcloud_networking_floatingip_v2.kubeadm.address
     kubeadm_host = var.kubeadm_host
     kubeadm_domain = var.kubeadm_domain
     random_string  = random_string.random.id
@@ -129,13 +130,13 @@ resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_9000_in" {
   security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
 
-resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_8181_in" {
-  description       = "Kubeadm accept tcp/8181, various app, ingress"
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_8085_in" {
+  description       = "Lighttpd accept tcp/8085, various app, ingress"
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "tcp"
-  port_range_min    = 8181
-  port_range_max    = 8181
+  port_range_min    = 8085
+  port_range_max    = 8085
   remote_ip_prefix  = "0.0.0.0/0"
   security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
