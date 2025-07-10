@@ -78,7 +78,7 @@ runcmd:
     export KUBECONFIG=/etc/kubernetes/admin.conf
     echo "source  <(kubectl completion bash)" >> /root/.bashrc
     CA=$(cat /etc/kubernetes/pki/ca.crt|base64 -w0)
-    TOKEN=$(kubeadm token create)
+    TOKEN=$(kubeadm token create --ttl 8760h)
     kubectl get nodes
     #
     echo "11 Make control node working"
