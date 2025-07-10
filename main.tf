@@ -32,6 +32,8 @@ resource "opentelekomcloud_dns_recordset_v2" "public_record" {
   count       = var.create_dns ? 1 : 0
   zone_id     = opentelekomcloud_dns_zone_v2.dns[0].id
   name        = "${var.kubeadm_host}.${var.kubeadm_domain}."
+  # example for catch all
+  #name        = "*.${var.kubeadm_domain}."
   description = "tf managed zone"
   type        = "A"
   ttl         = 300
