@@ -1,6 +1,10 @@
+
+########### 
+# VPC part
+########### 
 resource "opentelekomcloud_vpc_v1" "vpc" {
-  name = var.environment
-  cidr = var.vpc_cidr
+  name   = var.environment
+  cidr   = var.vpc_cidr
 }
 
 resource "opentelekomcloud_vpc_subnet_v1" "subnet" {
@@ -12,126 +16,178 @@ resource "opentelekomcloud_vpc_subnet_v1" "subnet" {
   secondary_dns = var.subnet_secondary_dns
 }
 
-data "opentelekomcloud_images_image_v2" "ncm" {
-  name        = var.image_name
-  most_recent = true
+########### 
+# DNS part 
+########### 
+resource "opentelekomcloud_dns_zone_v2" "dns" {
+  count       = var.create_dns ? 1 : 0
+  name        = "${var.kubeadm_domain}."
+  email       = var.admin_email
+  description = "tf managed zone"
+  ttl         = 300
+  type        = "public"
+}
+
+resource "opentelekomcloud_dns_recordset_v2" "public_record" {
+  count       = var.create_dns ? 1 : 0
+  zone_id     = opentelekomcloud_dns_zone_v2.dns[0].id
+  name        = "${var.kubeadm_host}.${var.kubeadm_domain}."
+  # example for catch all
+  #name        = "*.${var.kubeadm_domain}."
+  description = "tf managed zone"
+  type        = "A"
+  ttl         = 300
+  records     = [ opentelekomcloud_networking_floatingip_v2.kubeadm.address ]
+}
+
+########### 
+# ECS part
+########### 
+resource "random_string" "random" {
+  length  = 32
+  lower   = true
+  special = false
+  upper   = false
 }
 
 locals {
-  cloud_init = "#cloud-config\n${yamlencode({
-    write_files = [
-      {
-        path        = "/usr/local/sbin/ncm-bootstrap"
-        permissions = "0755"
-        content = templatefile("${path.module}/files/ncm-bootstrap.sh.tftpl", {
-          ncm_revision          = var.ncm_revision
-          checkpoint_revision   = var.checkpoint_revision
-          nvidia_driver_package = var.nvidia_driver_package
-          auto_start            = var.auto_start
-        })
-      },
-      {
-        path        = "/usr/local/bin/ncm-tinystories"
-        permissions = "0755"
-        content = templatefile("${path.module}/files/ncm-tinystories.sh.tftpl", {
-          eval_samples    = var.eval_samples
-          eval_batch_size = var.eval_batch_size
-        })
-      },
-      {
-        path        = "/etc/systemd/system/ncm-tinystories.service"
-        permissions = "0644"
-        content     = file("${path.module}/files/ncm-tinystories.service")
-      },
-      {
-        path        = "/opt/ncm/deutsche-geschichte.py"
-        permissions = "0755"
-        content     = file("${path.module}/files/deutsche-geschichte.py")
-      },
-      {
-        path        = "/opt/ncm/ncm-webui.py"
-        permissions = "0755"
-        content     = file("${path.module}/files/ncm-webui.py")
-      },
-      {
-        path        = "/etc/systemd/system/ncm-webui.service"
-        permissions = "0644"
-        content     = file("${path.module}/files/ncm-webui.service")
-      }
-    ]
-    runcmd = [["/usr/local/sbin/ncm-bootstrap"]]
-  })}"
+  kubeadm = templatefile("${path.module}/files/kubeadm",{
+    public_ip = opentelekomcloud_networking_floatingip_v2.kubeadm.address
+    kubeadm_host = var.kubeadm_host
+    kubeadm_domain = var.kubeadm_domain
+    random_string  = random_string.random.id
+  })
 }
 
-resource "opentelekomcloud_networking_secgroup_v2" "ncm" {
+data "opentelekomcloud_images_image_v2" "kubeadm" {
+  name        = var.image_name_kubeadm
+  most_recent = true
+}
+
+# Secgroup part (ECS)
+resource "opentelekomcloud_networking_secgroup_v2" "kubeadm" {
+  description = "Kubeadm Server"
   name        = "${var.environment}-secgroup"
-  description = "NCM GPU server"
 }
-
-resource "opentelekomcloud_networking_secgroup_rule_v2" "egress" {
-  description       = "NCM outbound downloads"
+ 
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_kubeadm_all_out" {
+  description       = "Kubeadm accept all traffic"
   direction         = "egress"
   ethertype         = "IPv4"
   remote_ip_prefix  = "0.0.0.0/0"
-  security_group_id = opentelekomcloud_networking_secgroup_v2.ncm.id
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+ 
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_icmp_in" {
+  description       = "Kubeadm accept icmp ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "icmp"
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
 
 resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_22_in" {
-  description       = "NCM SSH access"
+  description       = "Kubeadm accept tcp/22 ingress"
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "tcp"
   port_range_min    = 22
   port_range_max    = 22
-  remote_ip_prefix  = var.ssh_allowed_cidr
-  security_group_id = opentelekomcloud_networking_secgroup_v2.ncm.id
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
 
-resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_8080_in" {
-  description       = "NCM WebUI access"
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_80_in" {
+  description       = "Kubeadm accept tcp/80 ingress"
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "tcp"
-  port_range_min    = 8080
-  port_range_max    = 8080
-  remote_ip_prefix  = var.webui_allowed_cidr
-  security_group_id = opentelekomcloud_networking_secgroup_v2.ncm.id
+  port_range_min    = 80
+  port_range_max    = 80
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
 }
 
-resource "opentelekomcloud_compute_keypair_v2" "ncm" {
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_443_in" {
+  description       = "Kubeadm accept tcp/443 ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 443
+  port_range_max    = 443
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_9000_in" {
+  description       = "Kubeadm accept tcp/9000, various app, ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 9000
+  port_range_max    = 9000
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_8085_in" {
+  description       = "Lighttpd accept tcp/8085, various app, ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 8085
+  port_range_max    = 8085
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+resource "opentelekomcloud_networking_secgroup_rule_v2" "sg_tcp_6443_in" {
+  description       = "Kubeadm accept tcp/6443 ingress"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 6443
+  port_range_max    = 6443
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = opentelekomcloud_networking_secgroup_v2.kubeadm.id
+}
+
+# ssh key part
+resource "opentelekomcloud_compute_keypair_v2" "kubeadm" {
   name       = "${var.environment}-key"
   public_key = var.public_key
 }
 
-resource "opentelekomcloud_compute_instance_v2" "ncm" {
-  name              = "${var.environment}-ncm"
+# ECS part (instances)
+
+resource "opentelekomcloud_compute_instance_v2" "kubeadm" {
+  name              = "${var.environment}-kubeadm"
   availability_zone = var.availability_zone1
   flavor_id         = var.flavor_id
-  key_pair          = opentelekomcloud_compute_keypair_v2.ncm.name
-  security_groups   = [opentelekomcloud_networking_secgroup_v2.ncm.name]
-  user_data         = local.cloud_init
+  key_pair          = opentelekomcloud_compute_keypair_v2.kubeadm.name
+  security_groups   = ["${var.environment}-secgroup"]
+  user_data         = local.kubeadm
   power_state       = var.power_state
-
   network {
     uuid = opentelekomcloud_vpc_subnet_v1.subnet.id
   }
-
   block_device {
     boot_index            = 0
     source_type           = "image"
     destination_type      = "volume"
-    uuid                  = data.opentelekomcloud_images_image_v2.ncm.id
+    uuid                  = data.opentelekomcloud_images_image_v2.kubeadm.id
     delete_on_termination = true
-    volume_size           = var.root_volume_size
-    volume_type           = "SSD"
+    volume_size           = 30
   }
 }
 
-resource "opentelekomcloud_networking_floatingip_v2" "ncm" {
-  pool = "admin_external_net"
+resource "opentelekomcloud_networking_floatingip_v2" "kubeadm" {
+  pool  = "admin_external_net"
 }
 
-resource "opentelekomcloud_networking_floatingip_associate_v2" "ncm" {
-  floating_ip = opentelekomcloud_networking_floatingip_v2.ncm.address
-  port_id     = opentelekomcloud_compute_instance_v2.ncm.network[0].port
+resource "opentelekomcloud_networking_floatingip_associate_v2" "kubeadm" {
+  floating_ip = opentelekomcloud_networking_floatingip_v2.kubeadm.address
+  port_id     = opentelekomcloud_compute_instance_v2.kubeadm.network.0.port
 }

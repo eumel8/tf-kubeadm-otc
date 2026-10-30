@@ -1,15 +1,16 @@
 terraform {
-  required_version = ">= 1.6.0"
-  required_providers {
-    opentelekomcloud = {
-      source  = "opentelekomcloud/opentelekomcloud"
-      version = "~> 1.36"
-    }
-  }
+   required_providers {
+      opentelekomcloud = {
+         source = "opentelekomcloud/opentelekomcloud"
+         version = ">= 1.23.2"
+      }
+      random = {
+         source = "hashicorp/random"
+      }
+   }
 }
 
 provider "opentelekomcloud" {
-  region      = var.region
   access_key  = var.access_key
   secret_key  = var.secret_key
   domain_name = var.domain_name
