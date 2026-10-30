@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exec > >(tee -a /var/log/ncm-bootstrap.log) 2>&1
+trap 'printf "NCM bootstrap failed at line %s\n" "$LINENO" >&2' ERR
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
+apt-get -o Acquire::Retries=5 update
+apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+  ca-certificates git python3 python3-venv python3-dev build-essential util-linux \
+  linux-headers-"$(uname -r)" ${nvidia_driver_package}
+
+id ncm >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/ncm --shell /bin/bash ncm
+install -d -o ncm -g ncm /opt/ncm/artifacts /opt/ncm/cache /opt/ncm/results
+# cloud-init write_files runs before runcmd and creates /opt/ncm as root.
+# Give the new user ownership of its home before cloning or creating the venv.
+chown ncm:ncm /opt/ncm /opt/ncm/deutsche-geschichte.py /opt/ncm/ncm-webui.py
+if [ ! -d /opt/ncm/repo/.git ]; then
+  runuser -u ncm -- git clone https://github.com/HazyResearch/ncm.git /opt/ncm/repo
+fi
+runuser -u ncm -- git -C /opt/ncm/repo checkout --detach ${ncm_revision}
+runuser -u ncm -- python3 -m venv /opt/ncm/venv
+runuser -u ncm -- /opt/ncm/venv/bin/pip install --upgrade pip
+
+# CUDA 12.6 wheels retain Volta (V100), Turing and Ampere support.
+# PyTorch includes the CUDA runtime; no system CUDA toolkit is needed.
+runuser -u ncm -- /opt/ncm/venv/bin/pip install --no-cache-dir \
+  torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+runuser -u ncm -- /opt/ncm/venv/bin/pip install --no-cache-dir \
+  -r /opt/ncm/repo/requirements.txt 'transformers==4.53.3' 'huggingface_hub==0.34.4'
+runuser -u ncm -- /opt/ncm/venv/bin/pip check
+runuser -u ncm -- env HF_HOME=/opt/ncm/cache /opt/ncm/venv/bin/hf download \
+  hazyresearch/ncm-checkpoints --revision ${checkpoint_revision} \
+  --include 'tinystories/*' --local-dir /opt/ncm/artifacts
+runuser -u ncm -- /opt/ncm/venv/bin/pip freeze > /opt/ncm/installed-requirements.txt
+
+systemctl daemon-reload
+systemctl enable ncm-webui.service
+# cloud-final is still running here. Queue the start without waiting for it;
+# the UI becomes available as soon as the Python environment is ready.
+systemctl --no-block start ncm-webui.service
+%{ if auto_start ~}
+systemctl enable ncm-tinystories.service
+%{ else ~}
+systemctl disable ncm-tinystories.service
+%{ endif ~}
+
+# Let cloud-final exit before rebooting to load the new NVIDIA driver.
+printf 'NCM installed; reboot scheduled to load the NVIDIA driver.\n'
+shutdown -r +1 'NCM: load NVIDIA driver'

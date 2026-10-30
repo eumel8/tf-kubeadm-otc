@@ -1,17 +1,23 @@
-output "kubeadm-api" {
-  value = var.create_dns ? "https://${var.kubeadm_host}.${var.kubeadm_domain}" : opentelekomcloud_networking_floatingip_v2.kubeadm.address
+output "public_ip" {
+  value = opentelekomcloud_networking_floatingip_v2.ncm.address
 }
 
-output "kubeadm-info" {
-  value = ["Welcome to Kubeadm at OTC! It will take up to 5 minutes before your cluster is ready and accessable",
-           "To get kubeadm config from lighttpd server:",
-           "curl -o kubeadm.config http://${opentelekomcloud_networking_floatingip_v2.kubeadm.address}:8085/${random_string.random.id}/kubeadm.config",
-           "export KUBECONFIG=$(pwd)/kubeadm.config",
-           "To get kubeadm config via scp:",
-           "scp ubuntu@${opentelekomcloud_networking_floatingip_v2.kubeadm.address}:/var/www/html/${random_string.random.id}/kubeadm.config .;export KUBECONFIG=./kubeadm.config",
-           "To access the server via ssh:",
-           "ssh ubuntu@${opentelekomcloud_networking_floatingip_v2.kubeadm.address}",
-           "We provided some additional resource via install script on /install-software.sh",
-           "To get: curl -o install-software.sh http://${opentelekomcloud_networking_floatingip_v2.kubeadm.address}:8085/${random_string.random.id}/install-software.sh"
-           ]
+output "ssh_command" {
+  value = "ssh ubuntu@${opentelekomcloud_networking_floatingip_v2.ncm.address}"
+}
+
+output "webui_url" {
+  value = "http://${opentelekomcloud_networking_floatingip_v2.ncm.address}:8080/"
+}
+
+output "ncm_info" {
+  value = [
+    "Installation: sudo cloud-init status --wait (first boot includes a driver reboot)",
+    "Bootstrap log: sudo less /var/log/ncm-bootstrap.log",
+    "GPU: nvidia-smi",
+    "Job status: sudo systemctl status ncm-tinystories",
+    "Job logs: sudo journalctl -u ncm-tinystories -f",
+    "Run again: sudo systemctl restart ncm-tinystories",
+    "Results: /opt/ncm/results/<UTC timestamp>/ (stories.jsonl, evaluation.log, shard logs)",
+  ]
 }

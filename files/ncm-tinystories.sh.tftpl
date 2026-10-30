@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Keep web-triggered and systemd-triggered evaluation from sharing the GPU.
+exec 9>/opt/ncm/ncm-tinystories.lock
+flock -n 9 || { printf 'NCM evaluation is already running.\n' >&2; exit 1; }
+samples="$${NCM_SAMPLES:-${eval_samples}}"
+batch_size="$${NCM_BATCH_SIZE:-${eval_batch_size}}"
+[[ "$samples" =~ ^[1-9][0-9]*$ && "$batch_size" =~ ^[1-9][0-9]*$ ]] || {
+  printf 'NCM_SAMPLES and NCM_BATCH_SIZE must be positive integers.\n' >&2
+  exit 1
+}
+export PATH="/opt/ncm/venv/bin:$PATH"
+export HF_HOME=/opt/ncm/cache
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+cd /opt/ncm/repo
+
+nvidia-smi
+python - <<'PY'
+import torch
+if not torch.cuda.is_available():
+    raise SystemExit("CUDA unavailable: check nvidia-smi and /var/log/ncm-bootstrap.log")
+print(f"PyTorch {torch.__version__}, CUDA {torch.version.cuda}, GPU {torch.cuda.get_device_name(0)}")
+print("CUDA kernel check:", (torch.ones(1, device="cuda") + 1).item())
+PY
+
+out=$(mktemp -d "/opt/ncm/results/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
+ln -sfn "$out" /opt/ncm/results/latest
+printf 'Results: %s\n' "$out"
+
+# --n means samples PER SEED for unconditional tasks.
+# Keep generation and scoring on the same GPU, also on multi-GPU ECSs.
+set +e
+CUDA_VISIBLE_DEVICES=0 python evaluate.py \
+  --config /opt/ncm/artifacts/tinystories/config.yaml \
+  --checkpoint-dir /opt/ncm/artifacts/tinystories \
+  --gpus 0 --n "$samples" --bs "$batch_size" --out "$out" \
+  2>&1 | tee "$out/evaluation.log"
+status=$${PIPESTATUS[0]}
+set -e
+
+# Preserve readable stories even if subsequent GPT-2-large scoring fails.
+python - "$out" <<'PY'
+import json
+import pickle
+import sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+with (out / "stories.jsonl").open("w") as dest:
+    for path in sorted(out.glob("shard_*.pkl")):
+        with path.open("rb") as source:
+            shard = pickle.load(source)
+        for seed, text in zip(shard["seeds"], shard["hyps"]):
+            dest.write(json.dumps({"seed": seed, "text": text}, ensure_ascii=False) + "\n")
+print(f"Stories: {out / 'stories.jsonl'}")
+PY
+exit "$status"

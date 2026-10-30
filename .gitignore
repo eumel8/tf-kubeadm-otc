@@ -1,7 +1,7 @@
-.terraform
-.terraform.lock.hcl
-terraform.state*
-terraform.tfstate*
-terraform.tfvars
-kubeadm.config
-install-software.sh
+.terraform/
+*.tfstate*
+*.tfvars
+!terraform.tfvars.example
+*.tfplan
+__pycache__/
+manifests/

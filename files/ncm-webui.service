@@ -1,0 +1,19 @@
+[Unit]
+Description=NCM TinyStories web UI
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/opt/ncm/venv/bin/python
+
+[Service]
+Type=simple
+User=ncm
+Group=ncm
+WorkingDirectory=/opt/ncm
+Environment=HOME=/opt/ncm
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/ncm/venv/bin/python /opt/ncm/ncm-webui.py --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
